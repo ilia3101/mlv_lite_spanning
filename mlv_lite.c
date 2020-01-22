@@ -1914,7 +1914,7 @@ void show_recording_status()
 
     /* update average write speed */
     static int speed[MAX_WRITER_THREADS] = {0};
-    static int idle_percent = 0;
+    static int idle_percent[MAX_WRITER_THREADS] = {0};
     int num_threads = (card_spanning) ? MAX_WRITER_THREADS : 1;
 
     if (RAW_IS_RECORDING && !buffer_full)
@@ -1925,7 +1925,7 @@ void show_recording_status()
             if (writing_time[thread])
             { /* TODO: include SD speed */
                 speed[thread] += written_total[thread] * 100 / 1024 / writing_time[thread]; // KiB and msec -> MiB/s x100
-                idle_percent = idle_time[thread] * 100 / (writing_time[thread] + idle_time[thread]);
+                idle_percent[thread] = idle_time[thread] * 100 / (writing_time[thread] + idle_time[thread]);
                 measured_write_speed_thread[thread] = speed[thread];
                 measured_write_speed += measured_write_speed_thread[thread];
                 speed[thread] /= 10;
@@ -1985,7 +1985,7 @@ void show_recording_status()
                         snprintf(msg, sizeof(msg), "%d.%01dMB/s", speed[thread]/10, speed[thread]%10);
                         if (idle_time[thread])
                         {
-                            if (idle_percent) { STR_APPEND(msg, ", %d%% idle", idle_percent); }
+                            if (idle_percent[thread]) { STR_APPEND(msg, ", %d%% idle", idle_percent[thread]); }
                             else { STR_APPEND(msg,", %dms idle", idle_time[thread]); }
                         }
                         bmp_printf (FONT(FONT_SMALL, COLOR_WHITE, COLOR_BG_DARK), rl_x+rl_icon_width+5, rl_y+5+font_med.height+font_small.height*thread, "%s  ", msg);
