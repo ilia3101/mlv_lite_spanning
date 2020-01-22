@@ -141,7 +141,6 @@ static CONFIG_INT("raw.killgd", kill_gd, 0);
 /* Card spanning */
 static CONFIG_INT("raw.card_spanning", card_spanning, 0);
 #define MAX_WRITER_THREADS 2
-int sd_thread_running = 0;
 
 static CONFIG_INT("raw.res_x", resolution_index_x, 11);
 static CONFIG_INT("raw.res_x_fine", res_x_fine, 0);
