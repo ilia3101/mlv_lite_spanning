@@ -3434,11 +3434,6 @@ void raw_video_rec_task(uint32_t thread)
 
         msleep(60);
 
-        NotifyBox(5000, "Hi from second SD card thread!");
-
-        /* this makes sure that the file is mainly on CF card. Should this be here or is it stupid? */
-        // if (raw_movie_filename[0] != 'A') goto cleanup;
-
         get_next_chunk_file_name(raw_movie_filename, ++mlv_chunk, chunk_filename[thread], thread);
 
         f = FIO_CreateFile(chunk_filename[thread]);
@@ -3449,8 +3444,6 @@ void raw_video_rec_task(uint32_t thread)
         }
 
         written_total[thread] = written_chunk[thread] = write_mlv_chunk_headers(f, mlv_chunk, thread);
-
-        // return; /* For testing on and off */
     }
     
     /* main recording loop */
