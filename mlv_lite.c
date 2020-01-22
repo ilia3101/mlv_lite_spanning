@@ -1913,8 +1913,8 @@ void show_recording_status()
     }
 
     /* update average write speed */
-    static int speed[MAX_WRITER_THREADS] = {0};
-    static int idle_percent[MAX_WRITER_THREADS] = {0};
+    int speed[MAX_WRITER_THREADS] = {0};
+    int idle_percent[MAX_WRITER_THREADS] = {0};
     int num_threads = (card_spanning) ? MAX_WRITER_THREADS : 1;
 
     if (RAW_IS_RECORDING && !buffer_full)
