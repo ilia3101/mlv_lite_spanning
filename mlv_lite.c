@@ -3429,10 +3429,8 @@ void raw_video_rec_task(uint32_t thread)
         /* In this case we are the SD card thread, so wait for the main one to prepare everything */
         while (raw_recording_state == RAW_PREPARING)
         {
-            msleep(20);
+            msleep(10);
         }
-
-        msleep(60);
 
         get_next_chunk_file_name(raw_movie_filename, ++mlv_chunk, chunk_filename[thread], thread);
 
@@ -3479,8 +3477,8 @@ void raw_video_rec_task(uint32_t thread)
             }
         }
 
-        /* Take semaphore now that we are doing queue related stuff */
-        // take_semaphore(queue_sem, 0);
+        uint32_t old_int;
+        if (card_spanning) old_int = cli();
 
         int w_tail = writing_queue_tail; /* this one can be modified outside the loop, so grab it here, just in case */
         int w_head = writing_queue_head; /* this one is modified only here, but use it just for the shorter name */
@@ -3488,9 +3486,13 @@ void raw_video_rec_task(uint32_t thread)
         /* writing queue empty? nothing to do */ 
         if (w_head == w_tail)
         {
+            if (card_spanning) sei(old_int);
             msleep(10);
             continue;
         }
+
+        /* Take semaphore now that we are doing queue related stuff */
+        // take_semaphore(queue_sem, 0);
 
         int first_slot = writing_queue[w_head];
 
@@ -3499,6 +3501,7 @@ void raw_video_rec_task(uint32_t thread)
         
         if (slots[first_slot].status != SLOT_FULL)
         {
+            if (card_spanning) sei(old_int);
             msleep(20);
             continue;
         }
@@ -3581,7 +3584,7 @@ void raw_video_rec_task(uint32_t thread)
         /* mark these frames as "writing" */
         /* also recompute group_size, as the group might be smaller than initially selected */
         group_size = 0;
-    
+
         for (int i = w_head; i != after_last_grouped; INC_MOD(i, COUNT(writing_queue)))
         {
             int slot_index = writing_queue[i];
@@ -3593,8 +3596,10 @@ void raw_video_rec_task(uint32_t thread)
 
             if (slots[slot_index].status != SLOT_FULL)
             {
+                // sei(old_int);
                 bmp_printf(FONT_LARGE, 30, 70, "Slot check error");
                 beep();
+                // old_int = cli();
             }
 
             slots[slot_index].status = SLOT_WRITING;
@@ -3605,6 +3610,7 @@ void raw_video_rec_task(uint32_t thread)
         writing_queue_head = MOD(writing_queue_head + num_frames, COUNT(writing_queue)); /* Do whole calculation right here to reduce thread collision danger (still happens) */
         // writing_queue_head = after_last_grouped; /* Original version of this line, return to this once semaphore sorted */
 
+        if (card_spanning) sei(old_int);
         // give_semaphore(queue_sem); /* CANT get THESE SEAmEPHORES TO WORK!!!!YHUT*^GYBNIJFGO(TRY G* ^ */
 
         int t0 = get_ms_clock();
