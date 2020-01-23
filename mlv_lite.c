@@ -348,8 +348,6 @@ static GUARDED_BY(settings_sem) struct memSuite * srm_mem_suite = 0;
 static GUARDED_BY(settings_sem) void * fullsize_buffers[2];         /* original image, before cropping, double-buffered */
 static GUARDED_BY(LiveViewTask) int fullsize_buffer_pos = 0;        /* which of the full size buffers (double buffering) is currently in use */
 
-/**************************** Writing queue stuff *****************************/
-
 /* Semaphore for protecting frame slots and the queue, for card spanning where
  * two threads will be accessing this stuff */
 static struct semaphore * queue_sem = 0;
@@ -363,16 +361,13 @@ static volatile                 int force_new_buffer = 0;           /* if some o
 
 static GUARDED_BY(LiveViewTask) int writing_queue[COUNT(slots)+1];  /* queue of completed frames (slot indices) waiting to be saved */
 static GUARDED_BY(LiveViewTask) int writing_queue_tail = 0;         /* place captured frames here */
-static GUARDED_BY(RawRecTask)   int writing_queue_head = 0;         /* extract frames to be written from here */ 
-static volatile                 int writing_queue_head_writer = 0;  /* Queue head for write threads only, no queue length roll over (I hope volatile is correct keyword!) */
-
-/************************* End of writing queue stuff *************************/
+static GUARDED_BY(RawRecTask)   int writing_queue_head = 0;         /* extract frames to be written from here */
 
 static GUARDED_BY(LiveViewTask) int frame_count = 0;                /* how many frames we have processed */
 static GUARDED_BY(LiveViewTask) int skipped_frames = 0;             /* how many frames we had to drop (only done during pre-recording) */
 static GUARDED_BY(RawRecTask)   int chunk_frame_count[MAX_WRITER_THREADS] = {0};          /* how many frames in the current file chunk */
 static volatile                 int buffer_full = 0;                /* true when the memory becomes full */
-       GUARDED_BY(RawRecTask)   char raw_movie_filename[MAX_PATH];      /* file name for current (or last) movie */
+       GUARDED_BY(RawRecTask)   char * raw_movie_filename;          /* file name for current (or last) movie */
 static GUARDED_BY(RawRecTask)   char chunk_filename[MAX_WRITER_THREADS][MAX_PATH];          /* file name for current movie chunk */
 static GUARDED_BY(RawRecTask)   int64_t written_total[MAX_WRITER_THREADS] = {0};          /* how many bytes we have written in this movie */
 static GUARDED_BY(RawRecTask)   int64_t written_chunk[MAX_WRITER_THREADS] = {0};          /* same for current chunk */
@@ -2932,8 +2927,10 @@ static const char* get_cf_dcim_dir()
     return dcim_dir;
 }
 
-static void get_next_raw_movie_file_name(char * filename_out)
+static char* get_next_raw_movie_file_name()
 {
+    static char filename[100];
+
     struct tm now;
     LoadCalendarFromRTC(&now);
 
@@ -2945,7 +2942,7 @@ static void get_next_raw_movie_file_name(char * filename_out)
              * Try to match Canon movie file names
              * Use the file number from the H.264 card; increment if there are duplicates
              */
-            snprintf(filename_out, MAX_PATH, "%s/%s%04d.MLV", get_cf_dcim_dir(), get_file_prefix(), MOD(get_shooting_card()->file_number + number, 10000));
+            snprintf(filename, sizeof(filename), "%s/%s%04d.MLV", get_cf_dcim_dir(), get_file_prefix(), MOD(get_shooting_card()->file_number + number, 10000));
         }
         else
         {
@@ -2953,14 +2950,16 @@ static void get_next_raw_movie_file_name(char * filename_out)
              * Get unique file names from the current date/time
              * last field gets incremented if there's another video with the same name
              */
-            snprintf(filename_out, MAX_PATH, "%s/M%02d-%02d%02d.MLV", get_cf_dcim_dir(), now.tm_mday, now.tm_hour, COERCE(now.tm_min + number, 0, 99));
+            snprintf(filename, sizeof(filename), "%s/M%02d-%02d%02d.MLV", get_cf_dcim_dir(), now.tm_mday, now.tm_hour, COERCE(now.tm_min + number, 0, 99));
         }
         
         /* already existing file? */
         uint32_t size;
-        if( FIO_GetFileSize( filename_out, &size ) != 0 ) break;
+        if( FIO_GetFileSize( filename, &size ) != 0 ) break;
         if (size == 0) break;
     }
+
+    return filename;
 }
 
 /* Returns output to filename_out, which should have length MAX_PATH */
@@ -3384,7 +3383,7 @@ void raw_video_rec_task(uint32_t thread)
         give_semaphore(settings_sem);
 
         /* create output file */
-        get_next_raw_movie_file_name(raw_movie_filename);
+        raw_movie_filename = get_next_raw_movie_file_name();
         strcpy(chunk_filename[thread], raw_movie_filename);
         f = FIO_CreateFile(raw_movie_filename);
         if (!f)
