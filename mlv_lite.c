@@ -3219,9 +3219,9 @@ int write_frames(FILE** pf, void* ptr, int group_size, int num_frames, int threa
         {
             printf("Failed before 4GB limit. Card full?\n");
             /* don't try and write the remaining frames, the card is full */
-            // take_semaphore(queue_sem, 0);
+            take_semaphore(queue_sem, 0);
             writing_queue_head = writing_queue_tail;
-            // give_semaphore(queue_sem);
+            give_semaphore(queue_sem);
             return 0;
         }
         
@@ -3469,15 +3469,15 @@ void raw_video_rec_task(uint32_t thread)
                 NotifyBox(5000, "Emergency Stop");
                 raw_recording_state = RAW_FINISHING;
                 wait_lv_frames(2);
-                // take_semaphore(queue_sem, 0);
+                take_semaphore(queue_sem, 0);
                 writing_queue_head = writing_queue_tail;
-                // give_semaphore(queue_sem);
+                give_semaphore(queue_sem);
                 break;
             }
         }
 
-        uint32_t old_int;
-        if (card_spanning) old_int = cli();
+        /* Take semaphore for working with writing_queue_head */
+        take_semaphore(queue_sem, 0);
 
         int w_tail = writing_queue_tail; /* this one can be modified outside the loop, so grab it here, just in case */
         int w_head = writing_queue_head; /* this one is modified only here, but use it just for the shorter name */
@@ -3485,13 +3485,10 @@ void raw_video_rec_task(uint32_t thread)
         /* writing queue empty? nothing to do */ 
         if (w_head == w_tail)
         {
-            if (card_spanning) sei(old_int);
+            give_semaphore(queue_sem);
             msleep(10);
             continue;
         }
-
-        /* Take semaphore now that we are doing queue related stuff */
-        // take_semaphore(queue_sem, 0);
 
         int first_slot = writing_queue[w_head];
 
@@ -3500,7 +3497,7 @@ void raw_video_rec_task(uint32_t thread)
         
         if (slots[first_slot].status != SLOT_FULL)
         {
-            if (card_spanning) sei(old_int);
+            give_semaphore(queue_sem);
             msleep(20);
             continue;
         }
@@ -3572,6 +3569,12 @@ void raw_video_rec_task(uint32_t thread)
         
         int after_last_grouped = MOD(w_head + num_frames, COUNT(writing_queue));
 
+        /* remove these frames from the queue */
+        writing_queue_head = after_last_grouped;
+
+        /* We are done with writing_queue_head */
+        give_semaphore(queue_sem);
+
         /* write queue empty? better search for a new larger buffer */
         if (after_last_grouped == writing_queue_tail)
         {
@@ -3604,12 +3607,6 @@ void raw_video_rec_task(uint32_t thread)
             slots[slot_index].status = SLOT_WRITING;
             group_size += slots[slot_index].size;
         }
-
-        /* remove these frames from the queue */
-        writing_queue_head = after_last_grouped; /* Original version of this line, return to this once semaphore sorted */
-
-        if (card_spanning) sei(old_int);
-        // give_semaphore(queue_sem); /* CANT get THESE SEAmEPHORES TO WORK!!!!YHUT*^GYBNIJFGO(TRY G* ^ */
 
         int t0 = get_ms_clock();
         if (!last_write_timestamp) last_write_timestamp = t0;
