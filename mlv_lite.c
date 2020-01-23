@@ -3606,8 +3606,7 @@ void raw_video_rec_task(uint32_t thread)
         }
 
         /* remove these frames from the queue */
-        writing_queue_head = MOD(writing_queue_head + num_frames, COUNT(writing_queue)); /* Do whole calculation right here to reduce thread collision danger (still happens) */
-        // writing_queue_head = after_last_grouped; /* Original version of this line, return to this once semaphore sorted */
+        writing_queue_head = after_last_grouped; /* Original version of this line, return to this once semaphore sorted */
 
         if (card_spanning) sei(old_int);
         // give_semaphore(queue_sem); /* CANT get THESE SEAmEPHORES TO WORK!!!!YHUT*^GYBNIJFGO(TRY G* ^ */
