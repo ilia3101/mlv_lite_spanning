@@ -105,6 +105,8 @@ static int cam_1100d = 0;
 static int cam_5d3 = 0;
 static int cam_5d3_113 = 0;
 static int cam_5d3_123 = 0;
+
+static int cam_dualcard = 0; /* For cameras with spanning capability */
 /**
  * resolution (in pixels) should be multiple of 16 horizontally (see http://www.magiclantern.fm/forum/index.php?topic=5839.0)
  * furthermore, resolution (in bytes) should be multiple of 8 in order to use the fastest EDMAC flags ( http://magiclantern.wikia.com/wiki/Register_Map#EDMAC ),
@@ -3219,9 +3221,9 @@ int write_frames(FILE** pf, void* ptr, int group_size, int num_frames, int threa
         {
             printf("Failed before 4GB limit. Card full?\n");
             /* don't try and write the remaining frames, the card is full */
-            take_semaphore(queue_sem, 0);
+            if (card_spanning) take_semaphore(queue_sem, 0);
             writing_queue_head = writing_queue_tail;
-            give_semaphore(queue_sem);
+            if (card_spanning) give_semaphore(queue_sem);
             return 0;
         }
         
@@ -3469,15 +3471,15 @@ void raw_video_rec_task(uint32_t thread)
                 NotifyBox(5000, "Emergency Stop");
                 raw_recording_state = RAW_FINISHING;
                 wait_lv_frames(2);
-                take_semaphore(queue_sem, 0);
+                if (card_spanning) take_semaphore(queue_sem, 0);
                 writing_queue_head = writing_queue_tail;
-                give_semaphore(queue_sem);
+                if (card_spanning) give_semaphore(queue_sem);
                 break;
             }
         }
 
         /* Take semaphore for working with writing_queue_head */
-        take_semaphore(queue_sem, 0);
+        if (card_spanning) take_semaphore(queue_sem, 0);
 
         int w_tail = writing_queue_tail; /* this one can be modified outside the loop, so grab it here, just in case */
         int w_head = writing_queue_head; /* this one is modified only here, but use it just for the shorter name */
@@ -3485,7 +3487,7 @@ void raw_video_rec_task(uint32_t thread)
         /* writing queue empty? nothing to do */ 
         if (w_head == w_tail)
         {
-            give_semaphore(queue_sem);
+            if (card_spanning) give_semaphore(queue_sem);
             msleep(10);
             continue;
         }
@@ -3497,7 +3499,7 @@ void raw_video_rec_task(uint32_t thread)
         
         if (slots[first_slot].status != SLOT_FULL)
         {
-            give_semaphore(queue_sem);
+            if (card_spanning) give_semaphore(queue_sem);
             msleep(20);
             continue;
         }
@@ -3573,7 +3575,7 @@ void raw_video_rec_task(uint32_t thread)
         writing_queue_head = after_last_grouped;
 
         /* We are done with writing_queue_head */
-        give_semaphore(queue_sem);
+        if (card_spanning) give_semaphore(queue_sem);
 
         /* write queue empty? better search for a new larger buffer */
         if (after_last_grouped == writing_queue_tail)
@@ -4544,6 +4546,8 @@ static unsigned int raw_rec_init()
     cam_5d3_113 = is_camera("5D3",  "1.1.3");
     cam_5d3_123 = is_camera("5D3",  "1.2.3");
     cam_5d3 = (cam_5d3_113 || cam_5d3_123);
+
+    cam_dualcard = cam_5d3; /* Add any new models later */
     
     if (cam_5d2 || cam_50d)
     {
@@ -4553,7 +4557,7 @@ static unsigned int raw_rec_init()
     /* Hide card spanning on models other than 5D3 */
     for (struct menu_entry * e = raw_video_menu[0].children; !MENU_IS_EOL(e); e++)
     {
-        if (!cam_5d3 && streq(e->name, "Card Spanning") )
+        if (!cam_dualcard && streq(e->name, "Card Spanning") )
         {
             e->shidden = 1;
             card_spanning = 0; /* Just to make sure */
@@ -4589,7 +4593,7 @@ static unsigned int raw_rec_init()
     lossless_init();
 
     settings_sem = create_named_semaphore(0, 1);
-    queue_sem = create_named_semaphore("queue_sem", 1);
+    if (cam_dualcard) queue_sem = create_named_semaphore("queue_sem", 1);
 
     ASSERT(((uint32_t)task_create("compress_task", 0x0F, 0x1000, compress_task, (void*)0) & 1) == 0);
 
