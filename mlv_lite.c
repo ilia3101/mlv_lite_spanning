@@ -3006,11 +3006,13 @@ void init_mlv_chunk_headers(struct raw_info * raw_info)
 {
     mlv_start_timestamp = mlv_set_timestamp(NULL, 0);
 
+    uint64_t file_guid = mlv_generate_guid();
+
     for (int thread = 0; thread < MAX_WRITER_THREADS; ++thread)
     {
         memset(&file_hdr[thread], 0, sizeof(mlv_file_hdr_t));
         mlv_init_fileheader(&file_hdr[thread]);
-        file_hdr[thread].fileGuid = mlv_generate_guid();
+        file_hdr[thread].fileGuid = file_guid;
         file_hdr[thread].fileNum = 0;
         file_hdr[thread].fileCount = 0; //autodetect
         file_hdr[thread].fileFlags = 4;
