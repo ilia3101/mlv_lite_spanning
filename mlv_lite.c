@@ -106,7 +106,8 @@ static int cam_5d3 = 0;
 static int cam_5d3_113 = 0;
 static int cam_5d3_123 = 0;
 
-static int cam_dualcard = 0; /* For cameras with spanning capability */
+static int cam_dualcard = 0; /* Is it a dual card camera? */
+
 /**
  * resolution (in pixels) should be multiple of 16 horizontally (see http://www.magiclantern.fm/forum/index.php?topic=5839.0)
  * furthermore, resolution (in bytes) should be multiple of 8 in order to use the fastest EDMAC flags ( http://magiclantern.wikia.com/wiki/Register_Map#EDMAC ),
@@ -142,7 +143,7 @@ static CONFIG_INT("raw.killgd", kill_gd, 0);
 
 /* Card spanning */
 static CONFIG_INT("raw.card_spanning", card_spanning, 0);
-#define MAX_WRITER_THREADS 2
+#define MAX_WRITER_THREADS 3
 
 static CONFIG_INT("raw.res_x", resolution_index_x, 11);
 static CONFIG_INT("raw.res_x_fine", res_x_fine, 0);
@@ -1912,7 +1913,7 @@ void show_recording_status()
     /* update average write speed */
     int speed[MAX_WRITER_THREADS] = {0};
     int idle_percent[MAX_WRITER_THREADS] = {0};
-    int num_threads = (card_spanning) ? MAX_WRITER_THREADS : 1;
+    int num_threads = (card_spanning) ? (card_spanning+1) : 1;
 
     if (RAW_IS_RECORDING && !buffer_full)
     {
@@ -2975,7 +2976,8 @@ static void get_next_chunk_file_name(char* base_name, int chunk, char * filename
     /* Set drive letters for card spanning */
     if (card_spanning)
     {
-        switch (thread)
+        /* Every other thread goes to different card */
+        switch (thread%2)
         {
             case 0:
                 filename_out[0] = 'A';
@@ -3427,9 +3429,9 @@ void raw_video_rec_task(uint32_t thread)
         /* this will enable the vsync CBR and the other task(s) */
         raw_recording_state = pre_record ? RAW_PRE_RECORDING : RAW_RECORDING;
     }
-    else if (thread == 1)
+    else if (thread != 0)
     {
-        /* In this case we are the SD card thread, so wait for the main one to prepare everything */
+        /* In this case we are a secondary thread, so wait for the main one to prepare everything */
         while (raw_recording_state == RAW_PREPARING)
         {
             msleep(10);
@@ -3790,7 +3792,7 @@ abort_and_check_early_stop:
                     beep();
                 }
 
-                if (slots[slot_index].frame_number != last_processed_frame + 1) /* Why does the order matter!?? */
+                if (slots[slot_index].frame_number != last_processed_frame + 1 && !card_spanning) /* Why does the order matter!?? */
                 {
                     bmp_printf( FONT_MED, 30, 110, 
                         "Frame order error: slot %d, frame %d, expected %d ", slot_index, slots[slot_index].frame_number, last_processed_frame + 1
@@ -3892,11 +3894,12 @@ void raw_start_stop()
         printf("Starting raw recording...\n");
         /* raw_rec_task will change state to RAW_PREPARING */
         gui_stop_menu();
-        task_create("raw_rec_task", 0x19, 0x1000, raw_video_rec_task, (void*)0);
 
-        /* Create second thread for SD card with a bit less priority */
-        if (card_spanning)
-            task_create("raw_rec_task", 0x1a, 0x1000, raw_video_rec_task, (void*)1);
+        /* create writer threads with decreasing priority */
+        for (int i = 0; i < card_spanning+1; ++i)
+        {
+            task_create("raw_rec_task", 0x19+i, 0x1000, raw_video_rec_task, (void*)i);
+        }
     }
 }
 
@@ -3995,7 +3998,8 @@ static struct menu_entry raw_video_menu[] =
             {
                 .name = "Card Spanning",
                 .priv = &card_spanning,
-                .max = 1,
+                .max = 2,
+                .choices = CHOICES("OFF", "ON", "ON, with 2 CF threads"),
                 .help  = "Span video file over cards to use SD+CF write speed.",
                 .help2 = "May increase performance.",
             },
@@ -4549,7 +4553,32 @@ static unsigned int raw_rec_init()
     cam_5d3_123 = is_camera("5D3",  "1.2.3");
     cam_5d3 = (cam_5d3_113 || cam_5d3_123);
 
-    cam_dualcard = cam_5d3; /* Add any new models later */
+    cam_dualcard = 0;
+
+    /* Test how many cards are available */
+    if (cam_5d3) /* Add any other dual slot models */
+    {
+        // int num_cards = 0;
+        // FILE * testfile;
+        // char * testfile_name = "A:/testfile";
+        // for (int i = 0; i < 2; ++i)
+        // {
+        //     testfile = FIO_CreateFile(testfile_name);
+        //     if (testfile != NULL) num_cards++;
+        //     FIO_CloseFile(testfile);
+        //     FIO_RemoveFile(testfile_name);
+        //     testfile_name[0]++; /* Next drive letter */
+        // }
+        // if (num_cards == 2)
+        // {
+        //     cam_dualcard = 1;
+        // }
+        cam_dualcard = 1;
+    }
+    else
+    {
+        cam_dualcard = 0;
+    }
     
     if (cam_5d2 || cam_50d)
     {
@@ -4559,7 +4588,7 @@ static unsigned int raw_rec_init()
     /* Hide card spanning on models other than 5D3 */
     for (struct menu_entry * e = raw_video_menu[0].children; !MENU_IS_EOL(e); e++)
     {
-        if (!cam_dualcard && streq(e->name, "Card Spanning") )
+        if (!cam_dualcard && streq(e->name, "Card Spanning"))
         {
             e->shidden = 1;
             card_spanning = 0; /* Just to make sure */
