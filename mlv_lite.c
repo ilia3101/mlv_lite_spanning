@@ -3080,7 +3080,7 @@ if (cam_5d3_113 || cam_5d3_123)
 /* 12bit */
     if (OUTPUT_12BIT) rawi_hdr.raw_info.white_level = 6000;
 /* 14bit */
-    if (!bitdepth) rawi_hdr.raw_info.white_level = 16200;
+    //if (!bitdepth) rawi_hdr.raw_info.white_level = 16200;
 
 /* Set corrected iso when selected max iso preset in crop_rec.c */
     if (lens_info.raw_iso == 0x0) 
